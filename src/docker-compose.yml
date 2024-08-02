@@ -1,0 +1,83 @@
+version: "3.8"
+services:
+  common:
+    network_mode: host
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: bert-custom-training:1.0.0
+    volumes:
+      # hyperparameters.json to overwrite values defined in TRAIN_PARAM_JSONS files
+      - ./config/hyperparameters.json:/opt/ml/input/config/hyperparameters.json
+
+      # output model folder
+      - ../model:/opt/ml/model
+
+      # data folder
+      - ../data:/opt/ml/data
+
+      # cache
+      - ../cache:/tmp/cache
+    environment:
+      - DATA_PATH=/opt/ml/data # NOTE: also set in `.env` file for interpolation
+      - CC100_JA_URL=https://data.statmt.org/cc-100/ja.txt.xz
+      - CC100_JA_RAW_FILE=${DATA_PATH}/ja.txt.xz
+      - CC100_JA_PATH=${DATA_PATH}/cc100_ja_corpus
+      - CC100_NUM_FILES=32
+      - CC100_MAX_SENTENCE_NUM=128000000
+      - CC100_MAX_VALIDATION_SENTENCE_NUM=1000000
+      - JAWIKI_URL=https://dumps.wikimedia.org/other/cirrussearch/20240701/jawiki-20240701-cirrussearch-content.json.gz
+      - JAWIKI_RAW_FILE=${DATA_PATH}/jawiki-content.json.gz
+      - JAWIKI_PATH=${DATA_PATH}/jawiki_corpus
+      - JAWIKI_NUM_WORKERS=32
+      - JAWIKI_MAX_DOCUMENTS=0
+      - TOKENIZER_INPUT_SENTENCES=10000000
+      - TOKENIZER_INPUT_FILE=${DATA_PATH}/tokenizer_input_text.txt
+      - TOKENIZER_OUTPUT_PATH=${DATA_PATH}/wordpiece_unidic_lite
+    stdin_open: true
+    tty: true
+
+  download-cc100-ja:
+    extends: common
+    entrypoint: "src/pretrain_pipeline.sh download-cc100-ja"
+
+  download-jawiki:
+    extends: common
+    entrypoint: "src/pretrain_pipeline.sh download-jawiki"
+    tty: true
+
+  build-dataset-cc100-ja:
+    extends: common
+    entrypoint: "src/pretrain_pipeline.sh build-dataset-cc100-ja"
+
+  build-dataset-jawiki:
+    extends: common
+    entrypoint: "src/pretrain_pipeline.sh build-dataset-jawiki"
+
+  train-tokenizer:
+    extends: common
+    entrypoint: "src/pretrain_pipeline.sh train-tokenizer"
+
+  train-model-cc100-ja:
+    extends: common
+    runtime: nvidia
+    environment:
+      - DEVICE=cuda:0
+      - TRAIN_PARAM_JSONS=src/config/train_params_bert_tiny_custom_cc100_ja.json
+    entrypoint: "src/pretrain_pipeline.sh train-model"
+
+  train-model-jawiki:
+    extends: common
+    runtime: nvidia
+    environment:
+      - DEVICE=cuda:0
+      - TRAIN_PARAM_JSONS=src/config/train_params_bert_tiny_custom_jawiki.json
+    entrypoint: "src/pretrain_pipeline.sh train-model"
+
+  all:
+    extends: common
+    runtime: nvidia
+    environment:
+      - DEVICE=cuda:0
+      - TRAIN_PARAM_JSONS=src/config/train_params_bert_tiny_custom_cc100_ja.json:src/config/train_params_bert_tiny_custom_jawiki.json
+    entrypoint: "src/pretrain_pipeline.sh all"
