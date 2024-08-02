@@ -1,0 +1,12 @@
+accelerate==0.32.1
+typer
+deepspeed==0.14.4
+mpi4py==3.1.4
+evaluate==0.4.0
+transformers==4.42.0
+torch==2.3.1
+pandas==1.5.3
+fugashi==1.2.1
+unidic_lite==1.0.8
+datasets==2.18.0
+scikit-learn==1.5.1
