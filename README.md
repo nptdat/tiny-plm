@@ -5,7 +5,7 @@
 # Requirements
 - Hardware: GPU (consumer GPU is enough)
 - Software:
-    - Python 3.8 or above
+    - Python 3.9 or above
     - nvidia-docker
 
 # Data
@@ -29,7 +29,36 @@
     - In the training config file, update the path fo model config in `model_config_file` key.
     - You can define the model structure in the model config file.
 
+# Setting information
+tiny-plm support 3 types of settings
+
+## 1. Settings via environment variables
+- The starting point `src/pretrain_pipeline.sh` receives settings via environment variables
+- All of the available environment variables are defined in `src/config/docker_env_file.env`
+- Currently, keys in this .env file are transferred to environment variables automatically via docker-compose.
+- Please note that the `docker_env_file.env` is using [docker interpolation](https://docs.docker.com/compose/compose-file/12-interpolation/) to remove boilerplate (e.g., `${DATA_PATH}`). If you load the .env file from somewhere other than docker, please update the file to remove the interpolation.
+
+## 2. Settings via python script arguments
+- The pretrain_pipeline.sh script receives settings and call python scripts with settings are passed via arguments
+
+## 3. Settings from json files
+- A partial of settings (e.g., settings for training models) are stored in `src/config/*.json` setting files.
+- Python scripts can load those json setting files directly.
+
+
+# S3 storage
+- You can use S3 to store intermediate data and final result through out the pipeline.
+- S3 storage can be enabled be specifying `*_S3_*` setting keys
+- If S3 storage is enabled, the modules will use S3 as the followings:
+    - At the beginning, if the input does not exist in the local file system, the input will be downloaded from S3
+    - At the end, upload the output to S3
+- Authentication to S3 permissions:
+    - S3 storage function is assumed to be used on AWS instances (e.g., SageMaker, EC2...), so please provide permissions for S3 access to the instances (e.g., via assume role...)
+    - If you use S3 storage on local PCs or on-premise servers, please set AWS access keys to the environment (e.g, by using [aws configure](https://docs.aws.amazon.com/cli/v1/userguide/cli-authentication-user.html#cli-authentication-user-configure-wizard)...)
+
 # Train BERT model with Docker
+- Update configurations in `tiny-plm/src/config/docker_env_file.env`
+
 ### Train the whole pipeline with cc100-ja & JaWiki
 ```shell
 $ cd src

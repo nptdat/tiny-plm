@@ -32,10 +32,12 @@ import sys
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
+from time import time
 from typing import Any, List, Optional, Union
 
 import evaluate
 import transformers
+import typer
 from accelerate.utils import DistributedType
 from datasets import DatasetDict, load_dataset, utils
 from torch import nn
@@ -58,6 +60,8 @@ from transformers import (
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils.versions import require_version
+
+from utils.io import SimpleS3
 
 # import datasets
 
@@ -367,19 +371,18 @@ def get_model_max_input_len(model: "nn.Module") -> Any:
     ].shape[0]
 
 
-def main() -> None:
+def main(
+    param_file_path: Path, s3_bucket: str = "", s3_output_path: str = ""
+) -> None:
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
+    start_time = time()
+
     parser = HfArgumentParser(
         (ModelArguments, DataTrainingArguments, TrainingArguments)
     )
-
-    logger.info("==========================", sys.argv)
-    if sys.argv[-1] == "train":
-        sys.argv = sys.argv[:-1]
-        logger.info("argv after adjusting: ", sys.argv)
 
     # Dump partition info
     for line in subprocess.run(
@@ -388,7 +391,8 @@ def main() -> None:
         logger.info(line)
 
     # Overwrite params from hypermeters.json
-    args_json_file = os.path.abspath(sys.argv[-1])
+    args_json_file = str(param_file_path)
+
     with open(args_json_file, "rt") as f:
         args = json.load(f)
     if HYPER_PARAM_FILE.exists():
@@ -750,6 +754,22 @@ def main() -> None:
 
     trainer.create_model_card(**kwargs)
 
+    if s3_bucket and s3_output_path:
+        output_dir = training_args.output_dir
+        local_dir = output_dir.split("/")[-1]
+        s3_dir = s3_output_path.split("/")[-1]
+
+        s3_path = s3_output_path
+        if local_dir != s3_dir:
+            s3_path = os.path.join(s3_path, local_dir)
+
+        simple_s3 = SimpleS3(s3_bucket)
+        simple_s3.upload(output_dir, s3_path)
+
+    logger.info(
+        f"Finished Mask Language Model training in {time() - start_time}"
+    )
+
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
