@@ -81,6 +81,8 @@ MODEL_CONFIG_CLASSES = list(MODEL_FOR_MASKED_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 SUPPORT_DATA_FILE = ["csv", "json", "txt", "parquet"]
 HYPER_PARAM_FILE = Path("/opt/ml/input/config/hyperparameters.json")
+SAGEMAKER_DATA_ROOT = "/opt/ml/data"
+SAGEMAKER_MODEL_ROOT = "/opt/ml/model"
 
 # For TrainingArguments details, ref to https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
 
@@ -371,8 +373,36 @@ def get_model_max_input_len(model: "nn.Module") -> Any:
     ].shape[0]
 
 
+def get_s3_path(s3_root: str, local_root: str, local_path: str) -> str:
+    if not local_path.startswith(local_root):
+        raise ValueError(f"{local_path=} is not inside {local_root=}")
+    suffix = local_path[len(local_root) :]
+    if suffix.startswith("/"):
+        suffix = suffix[1:]
+    return os.path.join(s3_root, suffix)
+
+
+def s3_download(
+    simple_s3: SimpleS3, s3_root: str, local_root: str, local_path: str
+) -> None:
+    s3_path = get_s3_path(s3_root, local_root, local_path)
+    logger.info(f"Downloading {s3_path} to {local_path}...")
+    simple_s3.download(s3_path, local_path)
+
+
+def s3_upload(
+    simple_s3: SimpleS3, s3_root: str, local_root: str, local_path: str
+) -> None:
+    s3_path = get_s3_path(s3_root, local_root, local_path)
+    logger.info(f"Uploading {local_path} to {s3_path}...")
+    simple_s3.upload(local_path, s3_path)
+
+
 def main(
-    param_file_path: Path, s3_bucket: str = "", s3_output_path: str = ""
+    param_file_path: Path,
+    s3_bucket: str = "",
+    s3_data_path: str = "",
+    s3_model_path: str = "",
 ) -> None:
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -408,6 +438,38 @@ def main(
         args.update(hyper_params)
 
     model_args, data_args, training_args = parser.parse_dict(args)
+
+    # Download data from S3
+    if s3_bucket:
+        simple_s3 = SimpleS3(s3_bucket)
+        if not Path(data_args.train_path).exists():
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                data_args.train_path,
+            )
+        if not Path(data_args.validation_path).exists():
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                data_args.validation_path,
+            )
+        if not Path(model_args.tokenizer_vocab_file).exists():
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                model_args.tokenizer_vocab_file,
+            )
+        if not Path(model_args.model_name_or_path).exists():
+            s3_download(
+                simple_s3,
+                s3_model_path,
+                SAGEMAKER_MODEL_ROOT,
+                model_args.model_name_or_path,
+            )
 
     training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
@@ -754,17 +816,13 @@ def main(
 
     trainer.create_model_card(**kwargs)
 
-    if s3_bucket and s3_output_path:
-        output_dir = training_args.output_dir
-        local_dir = output_dir.split("/")[-1]
-        s3_dir = s3_output_path.split("/")[-1]
-
-        s3_path = s3_output_path
-        if local_dir != s3_dir:
-            s3_path = os.path.join(s3_path, local_dir)
-
-        simple_s3 = SimpleS3(s3_bucket)
-        simple_s3.upload(output_dir, s3_path)
+    if s3_bucket and s3_model_path:
+        s3_upload(
+            simple_s3,
+            s3_model_path,
+            SAGEMAKER_MODEL_ROOT,
+            training_args.output_dir,
+        )
 
     logger.info(
         f"Finished Mask Language Model training in {time() - start_time}"

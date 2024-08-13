@@ -5,8 +5,13 @@ set -e
 COMMAND=$1
 
 if [ -z $COMMAND ]; then
+    COMMAND=${PIPELINE_COMMAND}
+fi
+
+if [ -z $COMMAND ]; then
     COMMAND="all"
 fi
+
 
 echo "COMMAND: ${COMMAND}"
 echo "DEVICE: ${DEVICE}"
@@ -104,7 +109,7 @@ if [ $COMMAND == "train-tokenizer" ] || [ $COMMAND == "all" ]; then
         ${TOKENIZER_INPUT_FILE} \
         ${TOKENIZER_OUTPUT_PATH} \
         --s3-bucket ${S3_BUCKET} \
-        --s3-output-path ${TOKENIZER_S3_OUTPUT_PATH} \
+        --s3-output-path ${TOKENIZER_S3_OUTPUT_PATH}
 
 fi
 
@@ -123,8 +128,8 @@ if [ $COMMAND == "train-model" ] || [ $COMMAND == "all" ]; then
         if ! python src/run_mlm.py \
             ${param_file} \
             --s3-bucket ${S3_BUCKET} \
-            --s3-model-path ${S3_MODEL_PATH} \
-            --s3-tokenizer-path ${TOKENIZER_S3_OUTPUT_PATH}; then
+            --s3-data-path ${S3_DATA_PATH} \
+            --s3-model-path ${S3_MODEL_PATH}; then
             echo "[ERROR] BERT pretraining failed with ${param_file}"
             exit 1
         fi
