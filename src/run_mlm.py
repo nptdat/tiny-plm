@@ -851,7 +851,7 @@ def main(
             simple_s3,
             s3_model_path,
             SAGEMAKER_MODEL_ROOT,
-            training_args.output_dir,
+            training_args.final_output_dir,
         )
 
     logger.info(
