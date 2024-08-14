@@ -61,12 +61,12 @@ if [ $COMMAND == "build-dataset-cc100-ja" ] || [ $COMMAND == "all" ]; then
     python src/build_corpus_cc100_ja.py \
         ${CC100_JA_RAW_FILE} \
         ${CC100_JA_PATH} \
-        --s3-bucket ${S3_BUCKET} \
-        --s3-raw-file-path ${CC100_JA_S3_RAW_FILE_PATH} \
-        --s3-output-path ${CC100_JA_S3_PATH} \
-        --num-files ${CC100_NUM_FILES} \
-        --max-sentence-num ${CC100_MAX_SENTENCE_NUM} \
-        --max-validation-sentence-num ${CC100_MAX_VALIDATION_SENTENCE_NUM}
+        --s3-bucket=${S3_BUCKET} \
+        --s3-raw-file-path=${CC100_JA_S3_RAW_FILE_PATH} \
+        --s3-output-path=${CC100_JA_S3_PATH} \
+        --num-files=${CC100_NUM_FILES} \
+        --max-sentence-num=${CC100_MAX_SENTENCE_NUM} \
+        --max-validation-sentence-num=${CC100_MAX_VALIDATION_SENTENCE_NUM}
 fi
 
 if [ $COMMAND == "build-dataset-jawiki" ] || [ $COMMAND == "all" ]; then
@@ -74,11 +74,11 @@ if [ $COMMAND == "build-dataset-jawiki" ] || [ $COMMAND == "all" ]; then
     python src/build_corpus_wiki.py \
         ${JAWIKI_RAW_FILE} \
         ${JAWIKI_PATH} \
-        --s3-bucket ${S3_BUCKET} \
-        --s3-raw-file-path ${JAWIKI_S3_RAW_FILE_PATH} \
-        --s3-output-path ${JAWIKI_S3_PATH} \
-        --n-workers ${JAWIKI_NUM_WORKERS} \
-        --max-document-num ${JAWIKI_MAX_DOCUMENTS}
+        --s3-bucket=${S3_BUCKET} \
+        --s3-raw-file-path=${JAWIKI_S3_RAW_FILE_PATH} \
+        --s3-output-path=${JAWIKI_S3_PATH} \
+        --n-workers=${JAWIKI_NUM_WORKERS} \
+        --max-document-num=${JAWIKI_MAX_DOCUMENTS}
 fi
 
 ############################
@@ -110,7 +110,6 @@ if [ $COMMAND == "train-tokenizer" ] || [ $COMMAND == "all" ]; then
         ${TOKENIZER_OUTPUT_PATH} \
         --s3-bucket ${S3_BUCKET} \
         --s3-output-path ${TOKENIZER_S3_OUTPUT_PATH}
-
 fi
 
 ############################
@@ -124,12 +123,11 @@ if [ $COMMAND == "train-model" ] || [ $COMMAND == "all" ]; then
     IFS=':' list=($TRAIN_PARAM_JSONS)
     for param_file in "${list[@]}"; do
         print_title "----- Train the model with json_file=${param_file}..."
-        # if ! deepspeed --num_gpus=1 src/run_mlm.py ${TRAIN_PARAM_JSON}; then
         if ! python src/run_mlm.py \
             ${param_file} \
-            --s3-bucket ${S3_BUCKET} \
-            --s3-data-path ${S3_DATA_PATH} \
-            --s3-model-path ${S3_MODEL_PATH}; then
+            --s3-bucket=${S3_BUCKET} \
+            --s3-data-path=${S3_DATA_PATH} \
+            --s3-model-path=${S3_MODEL_PATH}; then
             echo "[ERROR] BERT pretraining failed with ${param_file}"
             exit 1
         fi

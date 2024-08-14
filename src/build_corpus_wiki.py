@@ -128,6 +128,16 @@ def main(
 ) -> None:
     start_time = time()
 
+    logger.info(f"{input_file=}")
+    logger.info(f"{output_dir=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_raw_file_path=}")
+    logger.info(f"{s3_output_path=}")
+
+    logger.info(
+        f"{min_sentence_length=}, {max_sentence_length=}, {max_document_num=}, {n_workers=}"
+    )
+
     if not Path(input_file).exists():
         if s3_bucket and s3_raw_file_path:
             simple_s3 = SimpleS3(s3_bucket)

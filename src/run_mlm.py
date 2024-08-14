@@ -262,6 +262,20 @@ class DataTrainingArguments:
                         )
 
 
+@dataclass
+class CustomTrainingArguments(TrainingArguments):
+    """
+    Provide more arguments related to training which are not defined in TrainingArguments yet.
+    """
+
+    final_output_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The final output directory where the training results will be saved."
+        },
+    )
+
+
 def build_datasets(
     data_args: DataTrainingArguments, model_args: ModelArguments
 ) -> DatasetDict:
@@ -408,10 +422,15 @@ def main(
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
+    logger.info(f"{param_file_path=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_data_path=}")
+    logger.info(f"{s3_model_path=}")
+
     start_time = time()
 
     parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
+        (ModelArguments, DataTrainingArguments, CustomTrainingArguments)
     )
 
     # Dump partition info
@@ -442,28 +461,37 @@ def main(
     # Download data from S3
     if s3_bucket:
         simple_s3 = SimpleS3(s3_bucket)
-        if not Path(data_args.train_path).exists():
+        if data_args.train_path and not Path(data_args.train_path).exists():
             s3_download(
                 simple_s3,
                 s3_data_path,
                 SAGEMAKER_DATA_ROOT,
                 data_args.train_path,
             )
-        if not Path(data_args.validation_path).exists():
+        if (
+            data_args.validation_path
+            and not Path(data_args.validation_path).exists()
+        ):
             s3_download(
                 simple_s3,
                 s3_data_path,
                 SAGEMAKER_DATA_ROOT,
                 data_args.validation_path,
             )
-        if not Path(model_args.tokenizer_vocab_file).exists():
+        if (
+            model_args.tokenizer_vocab_file
+            and not Path(model_args.tokenizer_vocab_file).exists()
+        ):
             s3_download(
                 simple_s3,
                 s3_data_path,
                 SAGEMAKER_DATA_ROOT,
                 model_args.tokenizer_vocab_file,
             )
-        if not Path(model_args.model_name_or_path).exists():
+        if (
+            model_args.model_name_or_path
+            and not Path(model_args.model_name_or_path).exists()
+        ):
             s3_download(
                 simple_s3,
                 s3_model_path,
@@ -764,7 +792,9 @@ def main(
 
         logger.info(f"--- {checkpoint=}")
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
+        trainer.save_model(
+            training_args.final_output_dir
+        )  # Saves the tokenizer too for easy upload
         metrics = train_result.metrics
 
         max_train_samples = (

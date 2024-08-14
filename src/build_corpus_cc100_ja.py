@@ -102,6 +102,12 @@ def main(
     max_sentence_num: int = 0,
     max_validation_sentence_num: int = 0,
 ) -> None:
+    logger.info(f"{input_path=}")
+    logger.info(f"{output_dir=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_raw_file_path=}")
+    logger.info(f"{s3_output_path=}")
+
     logger.info(
         f"{num_files=}, {max_sentence_num=}, {max_validation_sentence_num=}"
     )

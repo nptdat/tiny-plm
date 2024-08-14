@@ -13,6 +13,12 @@ services:
       # output model folder
       - ../model:/opt/ml/model
 
+      # output model folder
+      - ../checkpoints:/opt/ml/checkpoints
+
+      # output model folder
+      - ../tensorboard:/opt/ml/output/tensorboard
+
       # data folder
       - ../data:/opt/ml/data
 
