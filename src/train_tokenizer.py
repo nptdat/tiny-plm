@@ -12,6 +12,7 @@ from typing import Union
 import typer
 
 from japanese_tokenizers.implementations import JapaneseWordPieceTokenizer
+from utils.io import SimpleS3
 
 logger = getLogger(__name__)
 basicConfig(
@@ -22,6 +23,8 @@ basicConfig(
 def main(
     input_dir: Path,
     output_dir: Path,
+    s3_bucket: str = "",
+    s3_output_path: str = "",
     mecab_dic_type: str = "unidic_lite",
     vocab_size: int = 32768,
     limit_alphabet: int = 6129,
@@ -55,6 +58,10 @@ def main(
 
     logger.info("Saving the tokenizer to files")
     tokenizer.save_model(str(output_dir))
+
+    if s3_bucket and s3_output_path:
+        simple_s3 = SimpleS3(s3_bucket)
+        simple_s3.upload(str(output_dir), s3_output_path)
 
     logger.info(f"Finished training the tokenizer in {time() - start_time}")
 

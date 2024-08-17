@@ -9,4 +9,5 @@ apt-get -y install sudo \
     jq \
     libopenmpi-dev \
     python3 \
-    python3-pip
+    python3-pip \
+    awscli

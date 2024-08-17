@@ -24,6 +24,7 @@ import typer
 from tqdm import tqdm
 
 from utils import LruDict
+from utils.io import SimpleS3
 from utils.text import SentenceSplitter
 
 logger = getLogger(__name__)
@@ -117,12 +118,34 @@ def job_consumer(
 def main(
     input_file: str,
     output_dir: str,
+    s3_bucket: str = "",
+    s3_raw_file_path: str = "",
+    s3_output_path: str = "",
     min_sentence_length: int = 10,
     max_sentence_length: int = 1000,
     max_document_num: int = 0,
     n_workers: int = 4,
 ) -> None:
     start_time = time()
+
+    logger.info(f"{input_file=}")
+    logger.info(f"{output_dir=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_raw_file_path=}")
+    logger.info(f"{s3_output_path=}")
+
+    logger.info(
+        f"{min_sentence_length=}, {max_sentence_length=}, {max_document_num=}, {n_workers=}"
+    )
+
+    if not Path(input_file).exists():
+        if s3_bucket and s3_raw_file_path:
+            simple_s3 = SimpleS3(s3_bucket)
+            simple_s3.download(s3_raw_file_path, input_file)
+        else:
+            raise FileNotFoundError(
+                f"{input_file} not found and no S3 bucket is set!"
+            )
 
     # create the output dir
     Path(output_dir).mkdir(parents=True, exist_ok=True)
@@ -181,6 +204,10 @@ def main(
     target = str(valid_dir / FILE_TEMPLATE).format(num_files - 1)
     last_file_path.rename(target)
     logger.info(f"{str(valid_dir)} contains 1 files")
+
+    if s3_bucket and s3_output_path:
+        simple_s3 = SimpleS3(s3_bucket)
+        simple_s3.upload(output_dir, s3_output_path)
 
     logger.info(f"Finished building wiki corpus in {time() - start_time}")
 

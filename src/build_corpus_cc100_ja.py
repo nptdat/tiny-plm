@@ -21,6 +21,8 @@ from typing import List, TextIO, Union
 import typer
 from tqdm import tqdm
 
+from utils.io import SimpleS3
+
 logger = getLogger(__name__)
 basicConfig(
     level="INFO", format="%(asctime)s : %(levelname)s : %(name)s : %(message)s"
@@ -93,15 +95,33 @@ def limit_lines_on_file(
 def main(
     input_path: str,
     output_dir: str,
+    s3_bucket: str = "",
+    s3_raw_file_path: str = "",
+    s3_output_path: str = "",
     num_files: int = 32,
     max_sentence_num: int = 0,
     max_validation_sentence_num: int = 0,
 ) -> None:
+    logger.info(f"{input_path=}")
+    logger.info(f"{output_dir=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_raw_file_path=}")
+    logger.info(f"{s3_output_path=}")
+
     logger.info(
         f"{num_files=}, {max_sentence_num=}, {max_validation_sentence_num=}"
     )
 
     start_time = time()
+
+    if not Path(input_path).exists():
+        if s3_bucket and s3_raw_file_path:
+            simple_s3 = SimpleS3(s3_bucket)
+            simple_s3.download(s3_raw_file_path, input_path)
+        else:
+            raise FileNotFoundError(
+                f"{input_path} not found and no S3 bucket is set!"
+            )
 
     input_files = get_input_files(input_path)
 
@@ -158,6 +178,10 @@ def main(
             f"Limiting the validation file {file_path} to {max_validation_sentence_num} sents..."
         )
         limit_lines_on_file(target, max_validation_sentence_num, is_random=True)
+
+    if s3_bucket and s3_output_path:
+        simple_s3 = SimpleS3(s3_bucket)
+        simple_s3.upload(output_dir, s3_output_path)
 
     logger.info(f"Finished building cc100-ja corpus in {time() - start_time}")
 

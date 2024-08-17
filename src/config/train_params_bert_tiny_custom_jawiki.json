@@ -20,7 +20,9 @@
     "max_train_samples": null,
     "max_eval_samples": null,
 
-    "output_dir": "/opt/ml/model/bert-tiny-custom-mlm-jawiki",
+    "final_output_dir": "/opt/ml/model/bert-tiny-custom-mlm-jawiki",
+
+    "output_dir": "/opt/ml/checkpoints",
     "overwrite_output_dir": true,
     "do_train": true,
     "do_eval": true,
@@ -46,7 +48,7 @@
     "log_level": "info",
     "log_level_replica": "passive",
     "log_on_each_node": true,
-    "logging_dir": null,
+    "logging_dir": "/opt/ml/output/tensorboard",
     "logging_strategy": "steps",
     "logging_first_step": false,
     "logging_steps": 500,
@@ -139,7 +141,7 @@
     "adafactor": false,
     "group_by_length": true,
     "length_column_name": "length",
-    "report_to": null,
+    "report_to": ["tensorboard"],
     "ddp_find_unused_parameters": null,
     "ddp_bucket_cap_mb": null,
     "dataloader_pin_memory": true,

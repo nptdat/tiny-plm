@@ -32,10 +32,12 @@ import sys
 from dataclasses import dataclass, field
 from itertools import chain
 from pathlib import Path
+from time import time
 from typing import Any, List, Optional, Union
 
 import evaluate
 import transformers
+import typer
 from accelerate.utils import DistributedType
 from datasets import DatasetDict, load_dataset, utils
 from torch import nn
@@ -59,6 +61,8 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils.versions import require_version
 
+from utils.io import SimpleS3
+
 # import datasets
 
 
@@ -77,6 +81,8 @@ MODEL_CONFIG_CLASSES = list(MODEL_FOR_MASKED_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 SUPPORT_DATA_FILE = ["csv", "json", "txt", "parquet"]
 HYPER_PARAM_FILE = Path("/opt/ml/input/config/hyperparameters.json")
+SAGEMAKER_DATA_ROOT = "/opt/ml/data"
+SAGEMAKER_MODEL_ROOT = "/opt/ml/model"
 
 # For TrainingArguments details, ref to https://github.com/huggingface/transformers/blob/main/src/transformers/training_args.py
 
@@ -256,6 +262,20 @@ class DataTrainingArguments:
                         )
 
 
+@dataclass
+class CustomTrainingArguments(TrainingArguments):
+    """
+    Provide more arguments related to training which are not defined in TrainingArguments yet.
+    """
+
+    final_output_dir: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The final output directory where the training results will be saved."
+        },
+    )
+
+
 def build_datasets(
     data_args: DataTrainingArguments, model_args: ModelArguments
 ) -> DatasetDict:
@@ -367,19 +387,51 @@ def get_model_max_input_len(model: "nn.Module") -> Any:
     ].shape[0]
 
 
-def main() -> None:
+def get_s3_path(s3_root: str, local_root: str, local_path: str) -> str:
+    if not local_path.startswith(local_root):
+        raise ValueError(f"{local_path=} is not inside {local_root=}")
+    suffix = local_path[len(local_root) :]
+    if suffix.startswith("/"):
+        suffix = suffix[1:]
+    return os.path.join(s3_root, suffix)
+
+
+def s3_download(
+    simple_s3: SimpleS3, s3_root: str, local_root: str, local_path: str
+) -> None:
+    s3_path = get_s3_path(s3_root, local_root, local_path)
+    logger.info(f"Downloading {s3_path} to {local_path}...")
+    simple_s3.download(s3_path, local_path)
+
+
+def s3_upload(
+    simple_s3: SimpleS3, s3_root: str, local_root: str, local_path: str
+) -> None:
+    s3_path = get_s3_path(s3_root, local_root, local_path)
+    logger.info(f"Uploading {local_path} to {s3_path}...")
+    simple_s3.upload(local_path, s3_path)
+
+
+def main(
+    param_file_path: Path,
+    s3_bucket: str = "",
+    s3_data_path: str = "",
+    s3_model_path: str = "",
+) -> None:
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
-    )
+    logger.info(f"{param_file_path=}")
+    logger.info(f"{s3_bucket=}")
+    logger.info(f"{s3_data_path=}")
+    logger.info(f"{s3_model_path=}")
 
-    logger.info("==========================", sys.argv)
-    if sys.argv[-1] == "train":
-        sys.argv = sys.argv[:-1]
-        logger.info("argv after adjusting: ", sys.argv)
+    start_time = time()
+
+    parser = HfArgumentParser(
+        (ModelArguments, DataTrainingArguments, CustomTrainingArguments)
+    )
 
     # Dump partition info
     for line in subprocess.run(
@@ -388,7 +440,8 @@ def main() -> None:
         logger.info(line)
 
     # Overwrite params from hypermeters.json
-    args_json_file = os.path.abspath(sys.argv[-1])
+    args_json_file = str(param_file_path)
+
     with open(args_json_file, "rt") as f:
         args = json.load(f)
     if HYPER_PARAM_FILE.exists():
@@ -404,6 +457,47 @@ def main() -> None:
         args.update(hyper_params)
 
     model_args, data_args, training_args = parser.parse_dict(args)
+
+    # Download data from S3
+    if s3_bucket:
+        simple_s3 = SimpleS3(s3_bucket)
+        if data_args.train_path and not Path(data_args.train_path).exists():
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                data_args.train_path,
+            )
+        if (
+            data_args.validation_path
+            and not Path(data_args.validation_path).exists()
+        ):
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                data_args.validation_path,
+            )
+        if (
+            model_args.tokenizer_vocab_file
+            and not Path(model_args.tokenizer_vocab_file).exists()
+        ):
+            s3_download(
+                simple_s3,
+                s3_data_path,
+                SAGEMAKER_DATA_ROOT,
+                model_args.tokenizer_vocab_file,
+            )
+        if (
+            model_args.model_name_or_path
+            and not Path(model_args.model_name_or_path).exists()
+        ):
+            s3_download(
+                simple_s3,
+                s3_model_path,
+                SAGEMAKER_MODEL_ROOT,
+                model_args.model_name_or_path,
+            )
 
     training_args.distributed_state.distributed_type = DistributedType.DEEPSPEED
 
@@ -698,7 +792,9 @@ def main() -> None:
 
         logger.info(f"--- {checkpoint=}")
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
+        trainer.save_model(
+            training_args.final_output_dir
+        )  # Saves the tokenizer too for easy upload
         metrics = train_result.metrics
 
         max_train_samples = (
@@ -750,6 +846,18 @@ def main() -> None:
 
     trainer.create_model_card(**kwargs)
 
+    if s3_bucket and s3_model_path:
+        s3_upload(
+            simple_s3,
+            s3_model_path,
+            SAGEMAKER_MODEL_ROOT,
+            training_args.final_output_dir,
+        )
+
+    logger.info(
+        f"Finished Mask Language Model training in {time() - start_time}"
+    )
+
 
 if __name__ == "__main__":
-    main()
+    typer.run(main)
