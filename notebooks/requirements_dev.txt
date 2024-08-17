@@ -1,0 +1,7 @@
+huggingface_hub==0.23.4
+python-dotenv==1.0.1
+tf-keras==2.17.0
+tensorflow==2.17.0
+jax==0.4.30
+jaxlib==0.4.30
+flax==0.8.5
