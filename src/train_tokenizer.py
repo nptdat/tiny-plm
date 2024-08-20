@@ -32,6 +32,10 @@ def main(
 ) -> None:
     start_time = time()
 
+    if not input_dir.exists():
+        print(f"{str(input_dir)} does not exist! Please check!")
+        exit(1)
+
     output_dir.mkdir(exist_ok=True)
 
     input_files: Union[str, list]
