@@ -135,9 +135,10 @@ def main(
         cfg["max_token_len"],
     )
     logger.info(f"similarity_scores={len(similarity_scores):,}")
-    save_pkl_gzip(
-        cfg["hard_negative_cross_encoder_score_file"], similarity_scores
-    )
+
+    output_file = cfg["hard_negative_cross_encoder_score_file"]
+    logger.info(f"Writing similarity scores to {output_file}")
+    save_pkl_gzip(output_file, similarity_scores)
 
     logger.info(f"Finished cross-encoder prediction in {time() - start_time}")
 

@@ -1,0 +1,13 @@
+
+model_path: model/bert-30M-hrvocab-cross-encoder
+
+train_doc_master: data/splade_distil_hr/full_collection/raw.tsv
+train_query_master: data/splade_distil_hr/train_queries/queries/raw.tsv
+valid_doc_master: data/splade_distil_hr/val_retrieval/collection/raw.tsv
+valid_query_master: data/splade_distil_hr/val_retrieval/queries/raw.tsv
+
+hard_negative_init_score_file: data/splade_distil_hr/hard-negatives-init-scores.pkl.gz
+hard_negative_cross_encoder_score_file: data/splade_distil_hr/hard-negatives-cross-encoder-scores.pkl.gz
+
+max_token_len: 2040
+predict_batch_size: 128
