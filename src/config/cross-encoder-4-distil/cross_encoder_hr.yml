@@ -1,0 +1,10 @@
+input_file: data/splade_distil_hr/cross-encoder-hr-train-18M_pairs.pkl.gz
+output_path: model/bert-30M-hrvocab-cross-encoder
+model_path: model/bert-30M-hrvocab-mlm-hr
+max_train_size: 5000000 # 0 for no limit
+max_eval_size: 200
+max_token_len: 2040
+num_epochs: 1
+train_batch_size: 64
+evaluation_steps: 30000
+warmup_steps: 5000

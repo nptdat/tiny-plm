@@ -30,4 +30,4 @@ repos:
       - id: mypy
         name: mypy-src
         files: src/
-        additional_dependencies: ["types-all"]
+        additional_dependencies: ['types-PyYAML']
