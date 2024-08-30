@@ -26,10 +26,11 @@ REFERENCES:
 """
 
 import gzip
-import logging
 import pickle
 from datetime import datetime
+from logging import basicConfig, getLogger
 from pathlib import Path
+from time import time
 
 import transformers
 import typer
@@ -41,38 +42,41 @@ from tqdm import tqdm
 
 from utils.io.file import load_yaml
 
-logging.basicConfig(
-    format="%(asctime)s - %(message)s",
+logger = getLogger(__name__)
+basicConfig(
+    level="INFO",
+    format="%(asctime)s : %(levelname)s : %(name)s : %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    level=logging.INFO,
 )
 
 
 def main(
     config_file: Path = Path(
-        "src/config/cross-encoder-4-distil/cross_encoder.yml"
+        "src/config/cross-encoder-4-distil/cross_encoder_train.yml"
     ),
 ) -> None:
+    start_time = time()
     transformers.logging.set_verbosity_error()
 
     cfg = load_yaml(config_file)
-    logging.info(f"{cfg=}")
+    logger.info(f"{cfg=}")
 
     # Load data
-    logging.info("Loading training data...")
+    logger.info("Loading training data...")
     with gzip.open(cfg["input_file"], "rb") as f:
         (dev_samples, raw_train_samples) = pickle.load(f)
 
     if cfg["max_eval_size"] > 0:
         dev_samples = dev_samples[: cfg["max_eval_size"]]
 
-    logging.info(f"dev_samples={len(dev_samples)}")
-    logging.info(f"raw_train_samples={len(raw_train_samples)}")
+    logger.info(f"dev_samples={len(dev_samples)}")
+    logger.info(f"raw_train_samples={len(raw_train_samples)}")
 
     train_samples = []
     cnt = 0
     for query, passage, label in tqdm(raw_train_samples):
         data_len = len(query) + len(passage)
+        # although char_len may be greater than token_len, set max_char_len = max_token_len
         if data_len > cfg["max_token_len"]:
             continue
 
@@ -103,6 +107,8 @@ def main(
 
     # Save latest model
     model.save(cfg["model_path"])
+
+    logger.info(f"Finished cross-encoder training in {time() - start_time}")
 
 
 if __name__ == "__main__":
