@@ -1,6 +1,7 @@
 import gzip
 import pickle
 import warnings
+from collections import defaultdict
 from logging import basicConfig, getLogger
 from pathlib import Path
 from time import time
@@ -8,6 +9,7 @@ from typing import Any, Dict, Tuple, Union
 
 import pandas as pd
 import torch
+import transformers
 import typer
 from sentence_transformers.cross_encoder import CrossEncoder
 from tqdm import tqdm
@@ -80,27 +82,85 @@ def predict(
     batch_size: int,
     max_len: int,
 ) -> dict[int, dict[int, float]]:
-    similarity_scores = {}
-
-    # TODO: flatten the whole data into list of (query, doc) and pass to model for more effective inference
+    # Sorted pairs of (query, doc) by text len
+    logger.info("Accumulate lens of (query, doc) pairs...")
+    len_list = []
+    # cnt = 0
     for qid, data in tqdm(init_scores.items()):
         doc_ids = list(data.keys())
-
         query = id2query[qid]
         max_p_len = max_len - len(query)
-        scores = []
-        for start in range(0, len(doc_ids), batch_size):
-            end = start + batch_size
-            doc_ids_ = doc_ids[start:end]
-            pairs = []
-            for doc_id in doc_ids_:
-                pairs.append([query, id2doc[doc_id][:max_p_len]])
-            scores_ = model.predict(pairs).tolist()
-            scores.extend(scores_)
+        for doc_id in doc_ids:
+            doc = id2doc[doc_id][:max_p_len]
+            len_list.append((qid, doc_id, len(query) + len(doc)))
+        # cnt += 1
+        # if cnt >= 50:
+        #     break
+    sorted_len_list = sorted(len_list, key=lambda x: -x[2])
 
-        similarity_scores[qid] = dict(zip(doc_ids_, scores))
+    # accumulate all pairs sorted by text len (desc order)
+    logger.info("Building (query, doc) pairs ordered by text len...")
+    all_pairs = []
+    for qid, doc_id, text_len in tqdm(sorted_len_list):
+        query = id2query[qid]
+        max_p_len = max_len - len(query)
+        doc = id2doc[doc_id][:max_p_len]
+        all_pairs.append([query, doc])
+    logger.info(f"Num of pairs: {len(all_pairs):,}")
 
+    # predict sim scores with cross-encoder
+    logger.info("Predicting scores with cross-encoder...")
+    scores = model.predict(
+        all_pairs, batch_size=batch_size, show_progress_bar=True
+    ).tolist()
+    tuple_data: tuple = tuple(zip(*sorted_len_list))
+    (qids, doc_ids, lens_) = tuple_data
+    logger.info(
+        f"Finished predicting with cross-encoder! Num of scores: {len(scores)}..."
+    )
+
+    # return similarity scores
+    logger.info("Building similarity_scores...")
+    similarity_scores: dict[int, dict[int, float]] = defaultdict(dict)
+    for qid, doc_id, score in zip(qids, doc_ids, scores):
+        similarity_scores[qid][doc_id] = score
+
+    logger.info("Finished similarity_scores!")
     return similarity_scores
+
+
+# def predict_bak(
+#     init_scores: Dict[int, Dict[int, float]],
+#     model: PreTrainedModel,
+#     id2query: Dict[int, str],
+#     id2doc: Dict[int, str],
+#     batch_size: int,
+#     max_len: int,
+# ) -> dict[int, dict[int, float]]:
+#     similarity_scores = {}
+
+#     for qid, data in tqdm(init_scores.items()):
+#         doc_ids = list(data.keys())
+
+#         query = id2query[qid]
+#         max_p_len = max_len - len(query)
+#         scores = []
+#         for start in range(0, len(doc_ids), batch_size):
+#             end = start + batch_size
+#             doc_ids_ = doc_ids[start:end]
+#             pairs = []
+#             for doc_id in doc_ids_:
+#                 pairs.append([query, id2doc[doc_id][:max_p_len]])
+#             scores_ = model.predict(
+#                 pairs,
+#                 batch_size=1,
+#                 show_progress_bar=False
+#             ).tolist()
+#             scores.extend(scores_)
+
+#         similarity_scores[qid] = dict(zip(doc_ids_, scores))
+
+#     return similarity_scores
 
 
 def main(
@@ -110,11 +170,16 @@ def main(
 ) -> None:
     start_time = time()
 
+    # To avoid errors from transformers, like:
+    # Be aware, overflowing tokens are not returned for the setting you have chosen,
+    # i.e. sequence pairs with the 'longest_first' truncation strategy.
+    # So the returned list will always be empty even if some tokens have been removed.
+    transformers.logging.set_verbosity_error()
+
     cfg = load_yaml(config_file)
     logger.info(f"{cfg=}")
 
-    # device = "cuda" if torch.cuda.is_available() else "cpu"
-    device = "cpu"
+    device = "cuda" if torch.cuda.is_available() else "cpu"
     init_scores, id2query, id2doc = load_data(cfg)
 
     logger.info("Initializing Cross-Encoder model...")

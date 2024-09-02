@@ -10,4 +10,4 @@ hard_negative_init_score_file: data/splade_distil_hr/hard-negatives-init-scores.
 hard_negative_cross_encoder_score_file: data/splade_distil_hr/hard-negatives-cross-encoder-scores.pkl.gz
 
 max_token_len: 2040
-predict_batch_size: 128
+predict_batch_size: 64
