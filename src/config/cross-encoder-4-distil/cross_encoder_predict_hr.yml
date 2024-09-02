@@ -7,7 +7,12 @@ valid_doc_master: data/splade_distil_hr/val_retrieval/collection/raw.tsv
 valid_query_master: data/splade_distil_hr/val_retrieval/queries/raw.tsv
 
 hard_negative_init_score_file: data/splade_distil_hr/hard-negatives-init-scores.pkl.gz
-hard_negative_cross_encoder_score_file: data/splade_distil_hr/hard-negatives-cross-encoder-scores.pkl.gz
+hard_negative_cross_encoder_score_file: data/splade_distil_hr/hard-negatives-cross-encoder-scores-1st-half-{:03}.pkl.gz
 
 max_token_len: 2040
+char_per_token_ratio: 1.8
 predict_batch_size: 64
+
+predict_query_from: 0
+predict_query_to: 80000
+predict_query_chunk: 2000
