@@ -168,6 +168,7 @@ def main(
     cfg = load_yaml(config_file)
     logger.info(f"{cfg=}")
 
+    file_index_from = cfg["file_index_from"]
     max_token_len = cfg["max_token_len"]
     char_per_token_ratio = cfg["char_per_token_ratio"]
     max_len = int(max_token_len * char_per_token_ratio)
@@ -195,12 +196,13 @@ def main(
     start = 0
     chunk_size = cfg["predict_query_chunk"]
     for idx, start in tqdm(enumerate(range(query_from, query_to, chunk_size))):
+        file_index = idx + file_index_from
         end = min(start + chunk_size, query_to)
         if start >= end:
             break
 
         logger.info(
-            f"--- Predicting for the chunk {idx}(th), {start=}, {end=}..."
+            f"--- Predicting for the chunk {file_index}(th), {start=}, {end=}..."
         )
         sorted_len_triples, text_pairs = prepare_data(
             cfg=cfg, target_qids=set(sorted_qids[start:end]), max_len=max_len
@@ -211,7 +213,7 @@ def main(
         )
 
         output_file_tpl = cfg["hard_negative_cross_encoder_score_file"]
-        output_file = output_file_tpl.format(idx)
+        output_file = output_file_tpl.format(file_index)
         logger.info(f"Writing similarity scores to {output_file}")
         save_pkl_gzip(output_file, similarity_scores)
 
