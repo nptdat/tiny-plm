@@ -1,5 +1,5 @@
 {
-    "model_name_or_path": "/opt/ml/model/bert-tiny-40M-mlm-cc100-ja",
+    "model_name_or_path": "/opt/ml/model/bert-40M-mlm-cc100-ja",
     "model_type": "bert",
     "cache_dir": "/tmp/cache",
     "mecab_dic_type": "unidic_lite",
@@ -40,7 +40,7 @@
     "adam_beta2": 0.999,
     "adam_epsilon": 1e-8,
     "max_grad_norm": 1.0,
-    "num_train_epochs": 1,
+    "num_train_epochs": 2,
     "max_steps": -1,
     "lr_scheduler_type": "linear",
     "warmup_ratio": 0.08,
