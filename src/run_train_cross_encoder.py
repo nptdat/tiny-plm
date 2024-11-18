@@ -32,6 +32,7 @@ from logging import basicConfig, getLogger
 from pathlib import Path
 from time import time
 
+import numpy as np
 import transformers
 import typer
 from sentence_transformers import InputExample
@@ -49,12 +50,18 @@ basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
+np.random.seed(42)
+
 
 def main(
     config_file: Path = Path(
         "src/config/cross-encoder-4-distil/cross_encoder_train.yml"
     ),
 ) -> None:
+    logger.info(
+        "=== STARTED cross-encoder training from run_train_cross_encoder.py"
+    )
+
     start_time = time()
     transformers.logging.set_verbosity_error()
 
@@ -82,8 +89,17 @@ def main(
 
         train_samples.append(InputExample(texts=[query, passage], label=label))
         cnt += 1
-        if cfg["max_train_size"] > 0 and cnt >= cfg["max_train_size"]:
-            break
+
+    logger.info(f"{len(train_samples)=}")
+    if (
+        cfg["max_train_size"] > 0
+        and len(train_samples) >= cfg["max_train_size"]
+    ):
+        np.random.shuffle(train_samples)
+        logger.info(f"After shuffling: {len(train_samples)=}")
+        train_samples = train_samples[: cfg["max_train_size"]]
+
+    logger.info(f"Final: {len(train_samples)=}")
 
     train_dataloader = DataLoader(
         train_samples, shuffle=True, batch_size=cfg["train_batch_size"]

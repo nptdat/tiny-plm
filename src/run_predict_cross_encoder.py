@@ -5,8 +5,9 @@ from collections import defaultdict
 from logging import basicConfig, getLogger
 from pathlib import Path
 from time import time
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any
 
+import numpy as np
 import pandas as pd
 import torch
 import transformers
@@ -27,8 +28,20 @@ basicConfig(
 )
 
 
+def inverse_sigmoid(prob: float) -> float:
+    """
+    s = sigmoid(x) -> x = 1/(1 + e^(-x))
+    -> x = ln(s) - ln(1-s)
+    """
+    if prob >= 1:
+        return 10 ^ 6
+    if prob <= 0:
+        return -10 ^ 6
+    return float(np.log(prob) - np.log(1 - prob))
+
+
 def save_pkl_gzip(
-    filepath: str, similarity_scores: Dict[int, Dict[int, float]]
+    filepath: str, similarity_scores: dict[int, dict[int, float]]
 ) -> None:
     filepath_ = Path(filepath)
     if not filepath_.parent.exists():
@@ -37,43 +50,41 @@ def save_pkl_gzip(
         pickle.dump(similarity_scores, f)
 
 
-def get_all_query_ids(cfg: Dict[str, Any]) -> List[int]:
+def get_all_query_ids(cfg: dict[str, Any]) -> list[int]:
     with gzip.open(cfg["hard_negative_init_score_file"], "rb") as f:
         init_scores = pickle.load(f)
-    sorted_qids: List[int] = sorted(init_scores.keys())
-
+    sorted_qids: list[int] = sorted(init_scores.keys())
     return sorted_qids
 
 
+def load_master(train_file_path: str, valid_file_path: str) -> dict[int, str]:
+    df1 = pd.read_csv(train_file_path, delimiter="\t", header=None)
+    df2 = pd.read_csv(valid_file_path, delimiter="\t", header=None)
+    df = pd.concat([df1, df2])
+    df.columns = ["item_id", "text"]
+    df.drop_duplicates(subset=["item_id"], inplace=True)
+
+    id2item: dict[int, str] = dict()
+    for item_id, query in tqdm(zip(df["item_id"], df["text"])):
+        id2item[item_id] = query
+    return id2item
+
+
 def load_data(
-    cfg: Dict[str, Any]
-) -> Tuple[Dict[int, Dict[int, float]], Dict[int, str], Dict[int, str]]:
+    cfg: dict[str, Any]
+) -> tuple[dict[int, dict[int, float]], dict[int, str], dict[int, str]]:
     logger.info("Loading data...")
-    df1 = pd.read_csv(cfg["train_doc_master"], delimiter="\t", header=None)
-    df2 = pd.read_csv(cfg["valid_doc_master"], delimiter="\t", header=None)
-    df_docs = pd.concat([df1, df2])
-    df_docs.columns = ["doc_id", "text"]
-    df_docs.drop_duplicates(subset=["doc_id"], inplace=True)
 
-    df1 = pd.read_csv(cfg["train_query_master"], delimiter="\t", header=None)
-    df2 = pd.read_csv(cfg["valid_query_master"], delimiter="\t", header=None)
-    df_queries = pd.concat([df1, df2])
-    df_queries.columns = ["query_id", "text"]
-    df_queries.drop_duplicates(subset=["query_id"], inplace=True)
-
+    id2doc: dict[int, str] = load_master(
+        cfg["train_doc_master"], cfg["valid_doc_master"]
+    )
+    id2query: dict[int, str] = load_master(
+        cfg["train_query_master"], cfg["valid_query_master"]
+    )
     with gzip.open(cfg["hard_negative_init_score_file"], "rb") as f:
         init_scores = pickle.load(f)
 
-    id2doc = {}
-    for pid, passage in tqdm(zip(df_docs["doc_id"], df_docs["text"])):
-        id2doc[pid] = passage
-
-    id2query = {}
-    for qid, query in tqdm(zip(df_queries["query_id"], df_queries["text"])):
-        id2query[qid] = query
-
     num_pairs = sum([len(scores) for query_id, scores in init_scores.items()])
-
     logger.info(f"Num of docs in the master: {len(id2doc):,}")
     logger.info(f"Num of queries in the master: {len(id2query):,}")
     logger.info(f"Num of queries to compute scores={len(init_scores):,}")
@@ -83,7 +94,7 @@ def load_data(
 
 
 def prepare_data(
-    cfg: Dict[str, Any], target_qids: set[int], max_len: int
+    cfg: dict[str, Any], target_qids: set[int], max_len: int
 ) -> tuple[list[tuple[int, int, int]], list[tuple[str, str]]]:
     logger.info(f"Preparing data for prediction with {len(target_qids)=}...")
 
@@ -94,6 +105,7 @@ def prepare_data(
     )
 
     len_triples: list[tuple[int, int, int]] = []
+    # breakpoint()
     for qid in target_qids:
         query = id2query[qid]
         max_p_len = max(max_len - len(query), 0)
@@ -124,16 +136,21 @@ def prepare_data(
 
 def predict(
     text_pairs: list[tuple[str, str]], model: PreTrainedModel, batch_size: int
-) -> List[float]:
+) -> list[float]:
     # predict sim scores with cross-encoder
     logger.info("Predicting scores with cross-encoder...")
-    pred_scores: List[float] = model.predict(
+    pred_scores: list[float] = model.predict(
         text_pairs, batch_size=batch_size, show_progress_bar=True
     ).tolist()
+
+    # because we predict regression on label 0..1 by passing num_labels=1,
+    # the CrossEncoder apply sigmoid on the logits.
+    # Here, we apply inverse_sigmoid to convert the prob score back to logits.
+    pred_scores = [inverse_sigmoid(score) for score in pred_scores]
+
     logger.info(
         f"Finished predicting with cross-encoder! Num of scores: {len(pred_scores)}..."
     )
-
     return pred_scores
 
 
@@ -148,7 +165,6 @@ def build_similarity_scores(
     similarity_scores: dict[int, dict[int, float]] = defaultdict(dict)
     for qid, doc_id, score in zip(qids, doc_ids, pred_scores):
         similarity_scores[qid][doc_id] = score
-
     return similarity_scores
 
 
@@ -157,6 +173,10 @@ def main(
         "src/config/cross-encoder-4-distil/cross_encoder_predict.yml"
     ),
 ) -> None:
+    logger.info(
+        "=== STARTED cross-encoder prediction from run_predict_cross_encoder.py"
+    )
+
     start_time = time()
 
     # To avoid errors from transformers, like:
