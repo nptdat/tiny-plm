@@ -76,8 +76,16 @@ def main(
     if cfg["max_eval_size"] > 0:
         dev_samples = dev_samples[: cfg["max_eval_size"]]
 
+    eval_scout_samples, eval_reply_samples = [], []
+    eval_file = cfg.get("eval_file")
+    if eval_file:
+        with gzip.open(eval_file, "rb") as f:
+            (eval_scout_samples, eval_reply_samples) = pickle.load(f)
+
     logger.info(f"dev_samples={len(dev_samples)}")
     logger.info(f"raw_train_samples={len(raw_train_samples)}")
+    logger.info(f"eval_scout_samples={len(eval_scout_samples)}")
+    logger.info(f"eval_reply_samples={len(eval_reply_samples)}")
 
     train_samples = []
     cnt = 0
@@ -104,7 +112,19 @@ def main(
     train_dataloader = DataLoader(
         train_samples, shuffle=True, batch_size=cfg["train_batch_size"]
     )
-    evaluator = CERerankingEvaluator(dev_samples, name="train-eval")
+
+    # breakpoint()
+    evaluator = CERerankingEvaluator(dev_samples, name="train-validation")
+    scout_evaluator = (
+        CERerankingEvaluator(eval_scout_samples, name="scout-evaluation")
+        if eval_scout_samples
+        else None
+    )
+    reply_evaluator = (
+        CERerankingEvaluator(eval_reply_samples, name="reply-evaluation")
+        if eval_reply_samples
+        else None
+    )
 
     model = CrossEncoder(
         cfg["model_path"], num_labels=1, max_length=cfg["max_token_len"]
@@ -123,6 +143,13 @@ def main(
 
     # Save latest model
     model.save(cfg["model_path"])
+
+    if scout_evaluator:
+        logger.info("Evaluating on scout data")
+        scout_evaluator(model)
+    if reply_evaluator:
+        logger.info("Evaluating on reply data")
+        reply_evaluator(model)
 
     logger.info(f"Finished cross-encoder training in {time() - start_time}")
 
