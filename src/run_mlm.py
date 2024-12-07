@@ -131,13 +131,6 @@ class ModelArguments:
         metadata={"help": "Path to the vocab.txt to init the tokenizer"},
     )
 
-    tokenizer_path: str = field(
-        default="sp_tokenizer",
-        metadata={
-            "help": "Path to the folder to init the tokenizer with AutoTokenizer.from_pretrained"
-        },
-    )
-
     model_config_file: str = field(
         default="model-config.json",
         metadata={"help": "Path to json config for model inialization"},
@@ -328,23 +321,28 @@ def build_datasets(
 
 
 def init_tokenizer(
+    model_name_or_path: str,
     tokenizer_class: str,
-    tokenizer_path: str,
     vocab_file: str,
     mecab_dic_type: str,
 ) -> "PreTrainedTokenizer":
-    if tokenizer_class == "BertJapaneseTokenizer":
-        tokenizer = BertJapaneseTokenizer(
-            vocab_file,
-            do_lower_case=False,
-            word_tokenizer_type="mecab",
-            subword_tokenizer_type="wordpiece",
-            tokenize_chinese_chars=False,
-            mecab_kwargs={"mecab_dic": mecab_dic_type},
-            # model_max_length = MAX_LENGTH
-        )
+    if not model_name_or_path:
+        if tokenizer_class == "BertJapaneseTokenizer":
+            tokenizer = BertJapaneseTokenizer(
+                vocab_file,
+                do_lower_case=False,
+                word_tokenizer_type="mecab",
+                subword_tokenizer_type="wordpiece",
+                tokenize_chinese_chars=False,
+                mecab_kwargs={"mecab_dic": mecab_dic_type},
+                # model_max_length = MAX_LENGTH
+            )
+        else:
+            raise ValueError(
+                "Only support loading tokenizer from existing base model via `model_name_or_path` or initializing tokenizer for BertJapaneseTokenizer."
+            )
     else:
-        tokenizer = AutoTokenizer.from_pretrained(tokenizer_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
     return tokenizer
 
 
@@ -559,8 +557,8 @@ def main(
 
     # Custom
     tokenizer = init_tokenizer(
+        model_name_or_path=model_args.model_name_or_path,
         tokenizer_class=model_args.tokenizer_class,
-        tokenizer_path=model_args.tokenizer_path,
         vocab_file=model_args.tokenizer_vocab_file,
         mecab_dic_type=model_args.mecab_dic_type,
     )
