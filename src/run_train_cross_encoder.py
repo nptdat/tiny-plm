@@ -27,6 +27,7 @@ REFERENCES:
 
 import gzip
 import pickle
+from collections import Counter
 from datetime import datetime
 from logging import basicConfig, getLogger
 from pathlib import Path
@@ -38,6 +39,7 @@ import typer
 from sentence_transformers import InputExample
 from sentence_transformers.cross_encoder import CrossEncoder
 from sentence_transformers.cross_encoder.evaluation import CERerankingEvaluator
+from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -51,6 +53,13 @@ basicConfig(
 )
 
 np.random.seed(42)
+
+LOSS_FUNCTION_MAP = {
+    "MSELoss": nn.MSELoss,
+    "BCEWithLogitsLoss": nn.BCEWithLogitsLoss,
+    "CrossEntropyLoss": nn.CrossEntropyLoss,
+    "L1Loss": nn.L1Loss,
+}
 
 
 def main(
@@ -68,16 +77,49 @@ def main(
     cfg = load_yaml(config_file)
     logger.info(f"{cfg=}")
 
+    input_file = cfg.get("input_file")
+    eval_file = cfg.get("eval_file")
+    model_path = cfg.get("model_path")
+    output_path = cfg.get("output_path", "output")
+    tensorboard_path = cfg.get("tensorboard_path")
+
+    max_train_size = cfg.get("max_train_size", 0)
+    max_eval_size = cfg.get("max_eval_size", 100)
+    max_token_len = cfg.get("max_token_len", 512)
+    char_per_token_ratio = cfg.get(
+        "char_per_token_ratio", 1.0
+    )  # separately confirmed the ratio
+
+    num_epochs = cfg.get("num_epochs", 1)
+    train_batch_size = cfg.get("train_batch_size", 32)
+
+    evaluation_steps = cfg.get("evaluation_steps", 1000)
+    logging_steps = cfg.get("logging_steps", 100)
+    warmup_steps = cfg.get("warmup_steps", 5000)
+
+    oversampling_ratio = cfg.get("oversampling_ratio", 1)
+    oversampling_min_score = cfg.get("oversampling_min_score", 1)
+
+    loss_function = cfg.get("loss_function")
+
+    max_len = int(max_token_len * char_per_token_ratio)
+
+    logger.info(f"{char_per_token_ratio=}")
+    logger.info(f"{max_token_len=}")
+    logger.info(f"{max_len=}")
+    logger.info(f"{oversampling_ratio=}")
+    logger.info(f"{oversampling_min_score=}")
+    logger.info(f"{loss_function=}")
+
     # Load data
     logger.info("Loading training data...")
-    with gzip.open(cfg["input_file"], "rb") as f:
+    with gzip.open(input_file, "rb") as f:
         (dev_samples, raw_train_samples) = pickle.load(f)
 
-    if cfg["max_eval_size"] > 0:
-        dev_samples = dev_samples[: cfg["max_eval_size"]]
+    if max_eval_size > 0:
+        dev_samples = dev_samples[:max_eval_size]
 
     eval_scout_samples, eval_reply_samples = [], []
-    eval_file = cfg.get("eval_file")
     if eval_file:
         with gzip.open(eval_file, "rb") as f:
             (eval_scout_samples, eval_reply_samples) = pickle.load(f)
@@ -88,29 +130,33 @@ def main(
     logger.info(f"eval_reply_samples={len(eval_reply_samples)}")
 
     train_samples = []
-    cnt = 0
     for query, passage, label in tqdm(raw_train_samples):
         data_len = len(query) + len(passage)
-        # although char_len may be greater than token_len, set max_char_len = max_token_len
-        if data_len > cfg["max_token_len"]:
+        if data_len > max_len:
             continue
 
         train_samples.append(InputExample(texts=[query, passage], label=label))
-        cnt += 1
+        # oversampling on POSITIVE samples
+        if label >= oversampling_min_score:
+            for i in range(oversampling_ratio):
+                train_samples.append(
+                    InputExample(texts=[query, passage], label=label)
+                )
 
     logger.info(f"{len(train_samples)=}")
-    if (
-        cfg["max_train_size"] > 0
-        and len(train_samples) >= cfg["max_train_size"]
-    ):
+
+    if max_train_size > 0 and len(train_samples) >= max_train_size:
         np.random.shuffle(train_samples)
         logger.info(f"After shuffling: {len(train_samples)=}")
-        train_samples = train_samples[: cfg["max_train_size"]]
+        train_samples = train_samples[:max_train_size]
+
+    counter = Counter([sample.label for sample in train_samples])
 
     logger.info(f"Final: {len(train_samples)=}")
+    logger.info(f"Ratios of labels: {counter}")
 
     train_dataloader = DataLoader(
-        train_samples, shuffle=True, batch_size=cfg["train_batch_size"]
+        train_samples, shuffle=True, batch_size=train_batch_size
     )
 
     # breakpoint()
@@ -127,22 +173,34 @@ def main(
     )
 
     model = CrossEncoder(
-        cfg["model_path"], num_labels=1, max_length=cfg["max_token_len"]
+        model_path,
+        num_labels=1,
+        max_length=max_token_len,
     )
 
     # Train the model
+    loss_fct = LOSS_FUNCTION_MAP.get(loss_function)
     model.fit(
         train_dataloader=train_dataloader,
         evaluator=evaluator,
-        epochs=cfg["num_epochs"],
-        evaluation_steps=cfg["evaluation_steps"],
-        warmup_steps=cfg["warmup_steps"],
-        output_path=cfg["output_path"],
+        epochs=num_epochs,
+        loss_fct=loss_fct,
+        evaluation_steps=evaluation_steps,
+        logging_steps=logging_steps,
+        warmup_steps=warmup_steps,
+        output_path=output_path,
         use_amp=True,
+        tensorboard_path=tensorboard_path,
     )
+    """
+    NOTE: customize the sentence-bert's CrossEncoder class to enable `logging_steps` and `tensorboard_path` to the `fit` function.
+    https://github.com/UKPLab/sentence-transformers/blob/master/sentence_transformers/cross_encoder/CrossEncoder.py#L180
+    """
 
     # Save latest model
-    model.save(cfg["model_path"])
+    # output_path: store the model which gives highest validation score
+    # output_path/final: store the model trained till the final step. Note that model in this folder may be worse than the model in `output_path`.
+    model.save(output_path + "/final")
 
     if scout_evaluator:
         logger.info("Evaluating on scout data")
