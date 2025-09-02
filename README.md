@@ -9,15 +9,19 @@
     - nvidia-docker
 
 # Data
-- Current setting uses the following data to train a tiny bert model
-    - [cc100-ja](https://data.statmt.org/cc-100/ja.txt.xz)
-        - Use the first 128M sentences
-        - Randomly choose 124M sentences for training, 1M sentences for validation
-    - JaWiki ([2024/7/1 dump](https://dumps.wikimedia.org/other/cirrussearch/20240701/jawiki-20240701-cirrussearch-content.json.gz))
-        - Use all data from the dump
-        - Randomize 38.4M sentences for training, other 1.2M sentences for validation
-    - From JaWiki training data, random 10M sentences to train the tokenizer
-- To adjust the amount of data, please change environment variables in docker-compose.yml
+Current setting uses the following data to train a tiny bert model
+- [cc100-ja](https://data.statmt.org/cc-100/ja.txt.xz)
+    - Use the first 128M sentences
+    - Randomly choose 124M sentences for training, 1M sentences for validation
+    - To adjust the amount of data used for training, please change `CC100_MAX_SENTENCE_NUM` & `CC100_MAX_VALIDATION_SENTENCE_NUM` variables in `src/config/docker_env_file.env` file.
+- JaWiki ([2024/7/1 dump](https://dumps.wikimedia.org/other/cirrussearch/20240701/jawiki-20240701-cirrussearch-content.json.gz))
+    - Use all data from the dump
+    - Randomize 38.4M sentences for training, other 1.2M sentences for validation
+    - Note that the jawiki may become unavailable. If that is the case, do the followings to update the URL:
+      - Access to https://dumps.wikimedia.org/other/cirrussearch/, look for the latest available datetime.
+      - Then update the datetime to the URL
+    - Change `JAWIKI_MAX_DOCUMENTS` variable in `docker_env_file.env` file to adjust data size.
+- From JaWiki training data, random 10M sentences to train the tokenizer
 
 # Model training
 - Current setting trains a tiny BERT model with 12M parameters
