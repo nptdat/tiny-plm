@@ -35,6 +35,7 @@ from pathlib import Path
 from time import time
 from typing import Any, List, Optional, Union
 
+import numpy as np
 import evaluate
 import transformers
 import typer
@@ -733,9 +734,40 @@ def main(
                 logits = logits[0]
             return logits.argmax(dim=-1)
 
-        metric = evaluate.load("accuracy")
+        class AccumulativeAccuracyMetric:
+            """Class to accumulate prediction results and references for computing accuracy.
+            """
+            def __init__(self) -> None:
+                self.predictions = []
+                self.references = []
 
-        def compute_metrics(eval_preds: Any) -> Any:
+            def add(self, predictions: np.ndarray, references: np.ndarray) -> None:
+                """Simply store predictions & references for each evaluation batch.
+                predictions & references are 1-D arrays
+                """
+                self.predictions.append(predictions)
+                self.references.append(references)
+
+            def compute(self) -> float:
+                """Compute accuracy on all evaluation batch
+                """
+                preds = np.hstack(self.predictions)
+                labels = np.hstack(self.references)
+                metric = evaluate.load("accuracy")
+                return metric.compute(
+                    predictions=preds,
+                    references=labels
+                )
+
+        accuracy_metric = AccumulativeAccuracyMetric()
+
+        def compute_metrics(eval_preds: Any, compute_result: bool=True) -> Any:
+            """
+            The `compute_result` parameter is required when `batch_eval_metrics`
+            is set to True.
+            To support both True and False values for `batch_eval_metrics`,
+            we should set `compute_result` to True by default.
+            """
             preds, labels = eval_preds
             # preds have the same shape as the labels, after the argmax(-1) has been calculated
             # by preprocess_logits_for_metrics
@@ -744,7 +776,14 @@ def main(
             mask = labels != -100
             labels = labels[mask]
             preds = preds[mask]
-            return metric.compute(predictions=preds, references=labels)
+
+            # return metric.compute(predictions=preds, references=labels)
+            accuracy_metric.add(
+                predictions=preds.detach().cpu().numpy(),
+                references=labels.detach().cpu().numpy()
+            )
+            if compute_result:
+                return accuracy_metric.compute()
 
     # Data collator
     # This one will take care of randomly masking the tokens.
