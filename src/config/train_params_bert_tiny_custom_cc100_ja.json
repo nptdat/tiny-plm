@@ -33,6 +33,7 @@
     "per_device_eval_batch_size": 32,
     "gradient_accumulation_steps": 8,
     "eval_accumulation_steps": 4096,
+    "batch_eval_metrics": true,
     "eval_delay": 1,
     "learning_rate": 5e-5,
     "weight_decay": 0.0,
