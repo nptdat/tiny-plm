@@ -783,7 +783,10 @@ def main(
                 references=labels.detach().cpu().numpy()
             )
             if compute_result:
-                return accuracy_metric.compute()
+                result = accuracy_metric.compute()
+                # reset cache for the next evaluation
+                accuracy_metric = AccumulativeAccuracyMetric()
+                return result
 
     # Data collator
     # This one will take care of randomly masking the tokens.
