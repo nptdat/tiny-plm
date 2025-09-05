@@ -738,8 +738,7 @@ def main(
             """Class to accumulate prediction results and references for computing accuracy.
             """
             def __init__(self) -> None:
-                self.predictions = []
-                self.references = []
+                self.reset()
 
             def add(self, predictions: np.ndarray, references: np.ndarray) -> None:
                 """Simply store predictions & references for each evaluation batch.
@@ -758,6 +757,10 @@ def main(
                     predictions=preds,
                     references=labels
                 )
+
+            def reset(self) -> None:
+                self.predictions = []
+                self.references = []
 
         accuracy_metric = AccumulativeAccuracyMetric()
 
@@ -785,7 +788,7 @@ def main(
             if compute_result:
                 result = accuracy_metric.compute()
                 # reset cache for the next evaluation
-                accuracy_metric = AccumulativeAccuracyMetric()
+                accuracy_metric.reset()
                 return result
 
     # Data collator
